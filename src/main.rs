@@ -17,10 +17,13 @@ async fn signal(token: CancellationToken) -> anyhow::Result<()> {
 }
 
 fn start_sigint_listener(token: &CancellationToken) {
-    let cloned = token.clone();
+    let token = token.clone();
     tokio::spawn(async move {
         tracing::debug!("SIGINT background listener started");
-        signal(cloned).await
+        if let Err(error) = signal(token.clone()).await {
+            tracing::error!(error = ?error, "signal error");
+            token.cancel();
+        }
     });
 }
 
