@@ -6,8 +6,22 @@ export async function signInUser({ username, password }: { username: string; pas
 	const request = await fetch(`${HTTP_API_URL}/api/user/signin`, {
 		method: 'POST',
 		body: JSON.stringify({ username, password }),
-		headers: { 'Content-Type': 'application/json' }
+		headers: { 'Content-Type': 'application/json' },
+		credentials: 'include'
 	});
 
-	console.log(await request.json());
+	if (request.status === 200) {
+		return true;
+	}
+	return false;
+}
+
+export async function verify(): Promise<boolean> {
+	const request = await fetch(`${HTTP_API_URL}/api/user/verify`, {
+		method: 'GET',
+		headers: { 'Content-Type': 'application/json' },
+		credentials: 'include'
+	});
+
+	return request.status === 200;
 }

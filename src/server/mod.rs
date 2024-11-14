@@ -9,10 +9,17 @@ use axum::{
 };
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
-use tower_http::cors::CorsLayer;
+use tower_http::{
+    cors::CorsLayer,
+    trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer},
+    LatencyUnit,
+};
+use tracing::Level;
 
 use crate::state::AppState;
 
+mod error;
+mod images;
 mod user;
 
 pub type ApiState = Arc<AppState>;
@@ -31,13 +38,27 @@ pub async fn create_server(state: &Arc<AppState>) -> anyhow::Result<()> {
 
 fn make_router(state: &Arc<AppState>) -> Router {
     let state = Arc::clone(&state);
-    let api_router = Router::new().nest("/user", user::router());
+    let api_router = Router::new()
+        .nest("/user", user::router())
+        .nest("/images", images::router());
 
-    let service = ServiceBuilder::new().layer(
-        CorsLayer::new()
-            .allow_origin("http://localhost:5173".parse::<HeaderValue>().unwrap())
-            .allow_headers([CONTENT_TYPE, CONTENT_LENGTH]),
-    );
+    let service = ServiceBuilder::new()
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+                .on_request(DefaultOnRequest::new().level(Level::INFO))
+                .on_response(
+                    DefaultOnResponse::new()
+                        .level(Level::INFO)
+                        .latency_unit(LatencyUnit::Micros),
+                ),
+        )
+        .layer(
+            CorsLayer::new()
+                .allow_origin("http://localhost:5173".parse::<HeaderValue>().unwrap())
+                .allow_headers([CONTENT_TYPE, CONTENT_LENGTH])
+                .allow_credentials(true),
+        );
 
     Router::new()
         .nest("/api", api_router)

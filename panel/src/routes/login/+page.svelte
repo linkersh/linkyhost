@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { signInUser } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card/index';
@@ -8,9 +9,20 @@
 	let username = $state('');
 	let password = $state('');
 	let buttonEnabled = $derived(username.length > 3 && password.length > 5);
+	let signInError = $state(false);
+
+	$effect(() => {
+		username || password;
+		signInError = false;
+	});
 
 	async function onSignInClick() {
-		await signInUser({ username, password });
+		try {
+			await signInUser({ username, password });
+			goto('/dash');
+		} catch (err) {
+			signInError = true;
+		}
 	}
 </script>
 
@@ -30,6 +42,10 @@
 				<Label>Password</Label>
 				<Input bind:value={password} type="password"></Input>
 			</div>
+
+			{#if signInError}
+				<p class="mt-2 text-red-500">Incorrect username or password</p>
+			{/if}
 
 			<Button onclick={onSignInClick} disabled={!buttonEnabled} class="mt-2 w-full">Sign in</Button>
 		</Card.Content>
