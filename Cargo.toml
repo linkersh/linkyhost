@@ -7,6 +7,8 @@ edition = "2021"
 anyhow = "1.0.93"
 argon2 = "0.5.3"
 async-trait = "0.1.83"
+aws-config = "1.5.10"
+aws-sdk-s3 = "1.60.0"
 axum = { version = "0.7.7", features = ["macros"] }
 axum-extra = { version = "0.9.4", features = ["cookie"] }
 axum_typed_multipart = "0.13.2"

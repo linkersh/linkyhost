@@ -7,6 +7,7 @@ use tokio_util::sync::CancellationToken;
 mod auth;
 mod db;
 mod server;
+mod storage;
 mod state;
 
 async fn signal(token: CancellationToken) -> anyhow::Result<()> {
