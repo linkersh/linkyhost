@@ -1,0 +1,6 @@
+/server/config.toml
+/server/target
+/dash/node_modules
+/dash/.svelte-kit
+/dash/bun.lockb
+/pg/data

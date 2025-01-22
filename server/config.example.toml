@@ -1,0 +1,8 @@
+db_uri = "DB_URI"
+
+[store.fs]
+base_dir = "./storage"
+
+[auth]
+secret = "openssl rand -base64 129 | tr -d '\n'"
+allow_signup = true
