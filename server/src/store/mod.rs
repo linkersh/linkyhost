@@ -1,11 +1,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Result;
 use libvips::ops;
 use libvips::VipsImage;
 use tokio::fs::{self, File, OpenOptions};
 use tokio::io::BufReader;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -97,26 +99,69 @@ impl Thumbnail {
 
 pub struct FsStore {
     base_dir: String,
+    cancel: CancellationToken,
 }
 
 impl FsStore {
-    pub fn new(base_dir: &str) -> Result<FsStore> {
+    pub fn new(base_dir: &str, cancel: CancellationToken) -> Result<FsStore> {
+        let cancel_copy = cancel.clone();
+        let base_dir_copy = base_dir.to_owned();
+        tokio::spawn(async move {
+            tracing::info!("garbage collector started");
+            let mut interval = tokio::time::interval(Duration::from_secs(5 * 60)); // every 5 minutes
+
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        if let Err(error) = FsStore::collect_garbaj(&base_dir_copy).await {
+                            tracing::error!(error = ?error, "failed to collect garbage files");
+                        }
+                    }
+                    _ = cancel_copy.cancelled() => {
+                        break;
+                    }
+                }
+            }
+        });
+
         Ok(Self {
             base_dir: base_dir.to_string(),
+            cancel,
         })
     }
 
-    pub fn create_temp_file_sync(&self, id: Uuid) -> Result<std::fs::File> {
-        let temp_dir = format!("{}/temp", self.base_dir);
-        std::fs::create_dir_all(&temp_dir)?;
+    // i love your content :)
+    pub async fn collect_garbaj(base_dir: &str) -> anyhow::Result<()> {
+        let mut entries = fs::read_dir(format!("{}/temp/", base_dir)).await?;
+        loop {
+            let entry = entries.next_entry().await?;
+            let Some(en) = entry else {
+                break;
+            };
 
-        let file = std::fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .read(true)
-            .open(format!("{temp_dir}/{id}"))?;
-        Ok(file)
+            let accessed = en.metadata().await?.accessed()?;
+            let elapsed = accessed.elapsed()?;
+            if elapsed > Duration::from_secs(60 * 5) {
+                tracing::info!("deleted left over garbage: {:?}", en.path());
+                if let Err(error) = fs::remove_file(en.path()).await {
+                    tracing::error!(error = ?error, "failed to remove temp file")
+                }
+            }
+        }
+        Ok(())
     }
+
+    // pub fn create_temp_file_sync(&self, id: Uuid) -> Result<std::fs::File> {
+    //     let temp_dir = format!("{}/temp", self.base_dir);
+    //     std::fs::create_dir_all(&temp_dir)?;
+
+    //     let file = std::fs::OpenOptions::new()
+    //         .create_new(true)
+    //         .write(true)
+    //         .read(true)
+    //         .open(format!("{temp_dir}/{id}"))?;
+    //     Ok(file)
+    // }
 
     pub async fn create_temp_file(&self, id: Uuid) -> Result<File> {
         let temp_dir = format!("{}/temp", self.base_dir);

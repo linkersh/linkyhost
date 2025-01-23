@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{Error, Result};
 use libvips::VipsApp;
+use tokio_util::sync::CancellationToken;
 
 use crate::{auth::Auther, config::AppConfig, db::Database, store::FsStore, uploader::Uploader};
 
@@ -12,13 +13,13 @@ pub struct AppStateRef {
     pub store: FsStore,
     pub config: AppConfig,
     pub auther: Auther,
-    pub vips: VipsApp,
+    pub _vips: VipsApp,
     pub uploader: Uploader,
 }
 
-pub async fn create_state(config: AppConfig) -> Result<AppState> {
+pub async fn create_state(config: AppConfig, cancel: CancellationToken) -> Result<AppState> {
     let store = if let Some(fs) = &config.store.fs {
-        FsStore::new(&fs.base_dir)?
+        FsStore::new(&fs.base_dir, cancel)?
     } else {
         return Err(Error::msg("no storage service configured"));
     };
@@ -35,6 +36,6 @@ pub async fn create_state(config: AppConfig) -> Result<AppState> {
         config,
         auther,
         uploader,
-        vips,
+        _vips: vips,
     }))
 }

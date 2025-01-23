@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
 
     let cancel = CancellationToken::new();
     let config = AppConfig::load_from_file(Path::new("config.toml"))?;
-    let state = state::create_state(config).await?;
+    let state = state::create_state(config, cancel.clone()).await?;
 
     let server = ApiServer::new(state, cancel.clone());
     let listen_task = server.listen();
