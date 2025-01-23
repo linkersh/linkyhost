@@ -1,24 +1,30 @@
-use std::time::Instant;
-
 use axum::{
     body::Body,
-    extract::{DefaultBodyLimit, Path, Query, State},
+    extract::{multipart::Field, DefaultBodyLimit, Path, Query, State},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
-use axum_typed_multipart::{FieldData, TryFromMultipart, TypedMultipart};
+use axum_typed_multipart::{
+    FieldData, TryFromField, TryFromMultipart, TypedMultipart, TypedMultipartError,
+};
 use chrono::Utc;
+use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 use tokio::{
     fs::{File, OpenOptions},
-    io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader},
+    io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter},
 };
 use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
-use crate::{db::VaultFile, state::AppState, store::{ThumbOptions, Thumbnail}, uploader::CreateUploadInfo};
+use crate::{
+    db::VaultFile,
+    state::AppState,
+    store::{ThumbOptions, Thumbnail, STORAGE_DIR},
+    uploader::CreateUploadInfo,
+};
 
 use super::{error::ApiError, extractors::ExtractClaims};
 
@@ -26,9 +32,11 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_vaults))
         .route("/create", post(create_vault))
+        .route("/{id}/groupUpload", post(group_upload))
+        .route_layer(DefaultBodyLimit::disable())
         .route("/{id}/beginUpload", post(start_upload))
         .route("/uploads/{id}/chunk", post(upload_chunk))
-        .layer(DefaultBodyLimit::disable())
+        .route_layer(DefaultBodyLimit::disable())
         .route("/{id}/delete", post(delete_vault))
         .route("/{vaultId}/files", get(list_files))
         .route("/{vaultId}/files/{fileId}/thumbnail", get(file_thumb))
@@ -114,9 +122,111 @@ pub async fn start_upload(
     Ok(Json(StartUploadResp { id }))
 }
 
+#[derive(Deserialize)]
+pub struct GroupUploadMeta {
+    file_name: String,
+    file_size: u64,
+    content_type: String,
+}
+
+pub struct StoreTempFile {
+    file: File,
+    path: String,
+}
+
+#[async_trait::async_trait]
+impl TryFromField for StoreTempFile {
+    async fn try_from_field(
+        mut field: Field<'_>,
+        limit_bytes: Option<usize>,
+    ) -> Result<Self, TypedMultipartError> {
+        let id = Uuid::new_v4();
+        let temp_file_path = format!("{}/temp/{id}", STORAGE_DIR.get().unwrap());
+        let file = OpenOptions::new()
+            .write(true)
+            .read(true)
+            .create_new(true)
+            .open(&temp_file_path)
+            .await
+            .map_err(|x| TypedMultipartError::Other { source: x.into() })?;
+
+        let mut writer = BufWriter::new(file);
+        let mut length = 0;
+
+        while let Some(chunk) = field.chunk().await? {
+            length += chunk.len();
+            if let Some(limit) = limit_bytes {
+                if length > limit {
+                    return Err(TypedMultipartError::FieldTooLarge {
+                        field_name: field.name().unwrap_or("unknown field").to_owned(),
+                        limit_bytes: limit,
+                    });
+                }
+            }
+
+            writer
+                .write_all(&chunk)
+                .await
+                .map_err(|x| TypedMultipartError::Other { source: x.into() })?;
+        }
+
+        let file = writer.into_inner();
+        Ok(StoreTempFile {
+            file,
+            path: temp_file_path,
+        })
+    }
+}
+
+#[derive(TryFromMultipart)]
+pub struct GroupUploadBody {
+    #[form_data(limit = "1GB")]
+    data: Vec<StoreTempFile>,
+    metadata: String,
+}
+
+pub async fn group_upload(
+    ExtractClaims(claims): ExtractClaims,
+    State(state): State<AppState>,
+    Path(vault_id): Path<i64>,
+    TypedMultipart(GroupUploadBody { data, metadata }): TypedMultipart<GroupUploadBody>,
+) -> Result<impl IntoResponse, ApiError> {
+    let metas: Vec<GroupUploadMeta> = serde_json::from_str(&metadata)?;
+    let vault = state.database.get_vault_by_id(claims.sub, vault_id).await?;
+    if vault.is_none() {
+        return Err(ApiError::NotFound(
+            "Vault not found or you dont own it".to_string(),
+        ));
+    }
+
+    for (file, meta) in data.iter().zip(metas) {
+        let db_file = state
+            .database
+            .create_file(
+                &meta.file_name,
+                &meta.content_type,
+                meta.file_size as i64,
+                vault_id,
+                claims.sub,
+            )
+            .await?;
+
+        state
+            .store
+            .upload_file_from_path(
+                vault_id,
+                db_file.id as i64,
+                &std::path::Path::new(&file.path),
+            )
+            .await?;
+    }
+
+    Ok(())
+}
+
 #[derive(TryFromMultipart)]
 pub struct UploadChunkBody {
-    #[form_data(limit = "150MB")]
+    #[form_data(limit = "100MB")]
     data: FieldData<NamedTempFile>,
 }
 
@@ -164,11 +274,8 @@ pub async fn upload_chunk(
         buf.clear();
     }
 
-    println!("{} cursor at", upload.tmp_file.stream_position().await?);
     upload.tmp_file.flush().await?;
     if upload.received_size == upload.expected_size {
-        println!("received all bytes: {}", upload.expected_size);
-
         let file = state
             .database
             .create_file(
@@ -180,14 +287,13 @@ pub async fn upload_chunk(
             )
             .await?;
 
-        let upload_start = Instant::now();
+        // let upload_start = Instant::now();
 
+        let tmp_file_path = state.store.get_temp_path(upload.id);
         state
             .store
-            .upload_file(upload.vault_id, file.id as i64, upload.id)
+            .upload_file_from_path(upload.vault_id, file.id as i64, &tmp_file_path)
             .await?;
-
-        println!("took: {:.2?} to upload", upload_start.elapsed());
     }
 
     drop(upload);

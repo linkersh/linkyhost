@@ -84,3 +84,9 @@ export async function beginUpload({
 		})
 		.json();
 }
+
+// export interface GroupUploadFile {
+// 	file: File;
+// }
+
+// export async function groupUpload({}) {}

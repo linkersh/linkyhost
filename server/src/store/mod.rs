@@ -1,16 +1,23 @@
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
+use lazy_static::lazy_static;
 use libvips::ops;
 use libvips::VipsImage;
 use tokio::fs::{self, File, OpenOptions};
 use tokio::io::BufReader;
+use tokio::sync::OnceCell;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::state::AppState;
+
+lazy_static! {
+    pub static ref STORAGE_DIR: OnceCell<String> = OnceCell::new();
+}
 
 fn calculate_scale(src_width: u32, src_height: u32, dst_width: u32, dst_height: u32) -> f64 {
     let width_scale = dst_width as f64 / src_width as f64;
@@ -99,11 +106,11 @@ impl Thumbnail {
 
 pub struct FsStore {
     base_dir: String,
-    cancel: CancellationToken,
 }
 
 impl FsStore {
     pub fn new(base_dir: &str, cancel: CancellationToken) -> Result<FsStore> {
+        STORAGE_DIR.set(base_dir.to_owned())?;
         let cancel_copy = cancel.clone();
         let base_dir_copy = base_dir.to_owned();
         tokio::spawn(async move {
@@ -126,7 +133,6 @@ impl FsStore {
 
         Ok(Self {
             base_dir: base_dir.to_string(),
-            cancel,
         })
     }
 
@@ -142,7 +148,7 @@ impl FsStore {
             let accessed = en.metadata().await?.accessed()?;
             let elapsed = accessed.elapsed()?;
             if elapsed > Duration::from_secs(60 * 5) {
-                tracing::info!("deleted left over garbage: {:?}", en.path());
+                tracing::info!("deleted left over garbage: {:? }", en.path());
                 if let Err(error) = fs::remove_file(en.path()).await {
                     tracing::error!(error = ?error, "failed to remove temp file")
                 }
@@ -176,12 +182,17 @@ impl FsStore {
         Ok(file)
     }
 
-    pub async fn upload_file(&self, vault_id: i64, file_id: i64, upload_id: Uuid) -> Result<()> {
+    pub async fn upload_file_from_path(
+        &self,
+        vault_id: i64,
+        file_id: i64,
+        path: &Path,
+    ) -> Result<()> {
         let vault_dir = format!("{}/vaults/{}/{}", self.base_dir, vault_id, file_id);
         fs::create_dir_all(&vault_dir).await?;
 
         let dest_path = self.get_file_path(vault_id, file_id);
-        fs::rename(&format!("{}/temp/{upload_id}", self.base_dir), &dest_path).await?;
+        fs::rename(path, &dest_path).await?;
 
         Ok(())
     }

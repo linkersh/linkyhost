@@ -4,7 +4,6 @@
 	import Button from '../ui/button/button.svelte';
 	import FileList from './FileList.svelte';
 	import { Plus } from 'lucide-svelte';
-	import { beginUpload } from '@/api/vaults';
 
 	let isDragging = $state(false);
 	let dialogOpen = $state(false);
@@ -49,49 +48,8 @@
 		files = [...files, ...newFiles];
 	}
 
-	async function uploadChunk(uploadId: string, chunk: Blob) {
-		const formData = new FormData();
-		formData.append('data', chunk);
-
-		const res = await fetch(`http://127.0.0.1:8080/api/vaults/uploads/${uploadId}/chunk`, {
-			method: 'POST',
-			headers: {
-				Authorization: localStorage.getItem('token') || '',
-				// 'Content-Type': 'multipart/form-data'
-			},
-			body: formData
-		});
-
-		if (!res.ok) {
-			throw new Error('Failed to upload chunk');
-		}
-	}
-
-	async function uploadFile(file: File) {
-		const { id: uploadId } = await beginUpload({
-			vaultId,
-			contentType: file.type,
-			fileName: file.name,
-			fileSize: file.size
-		});
-
-		const CHUNK_SIZE = 90 * 1024 * 1024; // 90MB
-		const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-
-		for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-			const start = chunkIndex * CHUNK_SIZE;
-			const end = Math.min(start + CHUNK_SIZE, file.size);
-			const chunk = file.slice(start, end);
-			await uploadChunk(uploadId, chunk);
-		}
-	}
-
 	async function startUpload() {
-		for (const file of files) {
-			await uploadFile(file);
-		}
-
-		// uploader.enqueueUpload({ files, vaultId });
+		uploader.addUpload(files, vaultId);
 		dialogOpen = false;
 		files = [];
 	}

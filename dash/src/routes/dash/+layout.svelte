@@ -1,9 +1,10 @@
 <script lang="ts">
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import AppSidebar from '$lib/components/AppSidebar.svelte';
-	import { onDestroy, onMount } from 'svelte';
-	import { uploader, upStore } from '@/uploads';
 	import Upload from './Upload.svelte';
+	import { onDestroy, onMount } from 'svelte';
+	import { uploadStore } from '@/uploads';
+	// import { uploadStore, type ActiveUpload } from '@/uploads';
 
 	let { children } = $props();
 </script>
@@ -17,7 +18,7 @@
 		</div>
 
 		<div class="fixed bottom-4 right-4 flex flex-col gap-2">
-			{#each $upStore as upload}
+			{#each $uploadStore as upload}
 				<Upload {...upload}></Upload>
 			{/each}
 		</div>

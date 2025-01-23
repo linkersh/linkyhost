@@ -26,9 +26,15 @@ impl From<tokio::task::JoinError> for ApiError {
     }
 }
 
-impl From<axum::http::Error> for  ApiError {
+impl From<axum::http::Error> for ApiError {
     fn from(value: axum::http::Error) -> Self {
         Self::Internal(value.into())
+    }
+}
+
+impl From<serde_json::Error> for ApiError {
+    fn from(value: serde_json::Error) -> Self {
+        Self::Validation(value.to_string())
     }
 }
 

@@ -8,6 +8,11 @@
 	import { scale } from 'svelte/transition';
 
 	const upload: ActiveUpload = $props();
+
+	function calculateProgress(upload: ActiveUpload) {
+		return Math.min(Math.round((upload.transferredSize / upload.totalSize) * 100), 100);
+	}
+
 	function findVault() {
 		const vaults = get(vaultStore);
 		const vault = vaults.find((x) => x.id === upload.vaultId);
@@ -36,8 +41,8 @@
 		</div>
 
 		<div class="flex flex-row items-center gap-2">
-			<Progress max={100} value={upload.totalProgress} class="w-full"></Progress>
-			<span>{Math.min(Math.round(upload.totalProgress), 100)}%</span>
+			<Progress max={100} value={calculateProgress(upload)} class="w-full"></Progress>
+			<span>{calculateProgress(upload)}%</span>
 		</div>
 	{:else if upload.status === 'cancelled'}
 		<div class="flex flex-col">
