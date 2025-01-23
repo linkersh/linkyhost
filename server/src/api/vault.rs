@@ -1,8 +1,9 @@
 use std::time::Instant;
 
 use axum::{
-    extract::{DefaultBodyLimit, Path, State},
-    response::IntoResponse,
+    body::Body,
+    extract::{DefaultBodyLimit, Path, Query, State},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -11,12 +12,13 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 use tokio::{
-    fs::OpenOptions,
-    io::{AsyncReadExt, AsyncWriteExt, BufReader},
+    fs::{File, OpenOptions},
+    io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader},
 };
+use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
-use crate::{state::AppState, uploader::CreateUploadInfo};
+use crate::{db::VaultFile, state::AppState, store::{ThumbOptions, Thumbnail}, uploader::CreateUploadInfo};
 
 use super::{error::ApiError, extractors::ExtractClaims};
 
@@ -28,6 +30,8 @@ pub fn router() -> Router<AppState> {
         .route("/uploads/{id}/chunk", post(upload_chunk))
         .layer(DefaultBodyLimit::disable())
         .route("/{id}/delete", post(delete_vault))
+        .route("/{vaultId}/files", get(list_files))
+        .route("/{vaultId}/files/{fileId}/thumbnail", get(file_thumb))
 }
 
 #[derive(Deserialize, Debug)]
@@ -104,7 +108,7 @@ pub async fn start_upload(
             tmp_file: temp_file,
             upload_id: id,
             user_id: claims.sub,
-            vault_id: vault_id,
+            vault_id,
         })
         .await?;
     Ok(Json(StartUploadResp { id }))
@@ -160,8 +164,10 @@ pub async fn upload_chunk(
         buf.clear();
     }
 
+    println!("{} cursor at", upload.tmp_file.stream_position().await?);
+    upload.tmp_file.flush().await?;
     if upload.received_size == upload.expected_size {
-        println!("received all bytes!");
+        println!("received all bytes: {}", upload.expected_size);
 
         let file = state
             .database
@@ -190,4 +196,71 @@ pub async fn upload_chunk(
     data.contents.close()?;
 
     Ok(())
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct ListFilesQuery {
+    limit: u64,
+    skip: u64,
+}
+
+pub async fn list_files(
+    ExtractClaims(claims): ExtractClaims,
+    State(state): State<AppState>,
+    Path(vault_id): Path<i64>,
+    Query(query): Query<ListFilesQuery>,
+) -> Result<Json<Vec<VaultFile>>, ApiError> {
+    let vault = state.database.get_vault_by_id(claims.sub, vault_id).await?;
+    if vault.is_none() {
+        return Err(ApiError::NotFound(
+            "Vault not found or you dont own it".to_string(),
+        ));
+    }
+
+    let files = state
+        .database
+        .list_files(claims.sub, vault_id, query.limit as i64, query.skip as i64)
+        .await?;
+    Ok(Json(files))
+}
+
+pub async fn file_thumb(
+    ExtractClaims(claims): ExtractClaims,
+    State(state): State<AppState>,
+    Path((vault_id, file_id)): Path<(i64, i64)>,
+) -> Result<impl IntoResponse, ApiError> {
+    let vault = state.database.get_vault_by_id(claims.sub, vault_id).await?;
+    if vault.is_none() {
+        return Err(ApiError::NotFound(
+            "Vault not found or you dont own it".to_string(),
+        ));
+    }
+
+    const MAX_FILE_SIZE: i64 = 1024 * 1024 * 50;
+    let file = state.database.get_file_by_id(vault_id, file_id).await?;
+    if !file.content_type.starts_with("image/") {
+        return Err(ApiError::UnsupportedFileType);
+    }
+
+    // we avoid generating thumbnails for files >50MB
+    if file.size > MAX_FILE_SIZE {
+        return Err(ApiError::UnsupportedFileType);
+    }
+
+    let options = ThumbOptions {
+        width: 256,
+        height: 256,
+        vault_id,
+        file_id,
+    };
+
+    let thumbnail = Thumbnail::new(options, state.clone());
+    let thumb_path = thumbnail.process().await?;
+    let thumb_file = File::open(thumb_path).await?;
+    let body = Body::from_stream(ReaderStream::new(thumb_file));
+    let res = Response::builder()
+        .header("Content-Type", file.content_type)
+        .body(body)?;
+
+    Ok(res)
 }

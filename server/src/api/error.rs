@@ -8,6 +8,8 @@ pub enum ApiError {
     Unauthorized(String),
     #[error("Not Found {0}")]
     NotFound(String),
+    #[error("File type not supported")]
+    UnsupportedFileType,
     #[error("Internal Server Error")]
     Internal(#[from] anyhow::Error),
 }
@@ -18,9 +20,22 @@ impl From<std::io::Error> for ApiError {
     }
 }
 
+impl From<tokio::task::JoinError> for ApiError {
+    fn from(value: tokio::task::JoinError) -> Self {
+        Self::Internal(value.into())
+    }
+}
+
+impl From<axum::http::Error> for  ApiError {
+    fn from(value: axum::http::Error) -> Self {
+        Self::Internal(value.into())
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
         let (status, message) = match self {
+            Self::UnsupportedFileType => (StatusCode::PAYLOAD_TOO_LARGE, "".to_owned()),
             Self::Validation(m) => (StatusCode::BAD_REQUEST, m.to_string()),
             Self::Unauthorized(m) => (StatusCode::UNAUTHORIZED, m.to_string()),
             Self::NotFound(m) => (StatusCode::NOT_FOUND, m.to_string()),
