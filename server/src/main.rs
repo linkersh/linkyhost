@@ -10,8 +10,8 @@ mod auth;
 mod config;
 mod db;
 mod state;
-mod uploader;
 mod store;
+mod uploader;
 
 async fn shutdown_signal() -> anyhow::Result<()> {
     tokio::signal::ctrl_c().await?;
@@ -31,7 +31,11 @@ async fn main() -> Result<()> {
     let shutdown_task = shutdown_signal();
 
     tokio::select! {
-        _ = listen_task => {},
+        res = listen_task => {
+            if let Err(error) = res {
+                tracing::error!(error = ?error, "failed to listen");
+            }
+        },
         _ = shutdown_task => {
             cancel.cancel();
             tracing::info!("shutdown signal received");

@@ -16,10 +16,9 @@ pub struct User {
 pub struct Vault {
     pub id: i64,
     pub name: String,
-    pub flags: i32,
-    pub kind: i32,
     pub created_at: NaiveDateTime,
     pub user_id: i32,
+    pub is_encrypted: bool,
 }
 
 #[derive(FromRow, Serialize, Deserialize)]
@@ -32,6 +31,24 @@ pub struct VaultFile {
     pub created_at: NaiveDateTime,
     pub uploaded_at: NaiveDateTime,
     pub content_type: String,
+    pub fixed_iv: Vec<u8>,
+    pub password_salt: Vec<u8>,
+    pub chunk_size: i32,
+    pub is_encrypted: bool,
+    pub is_hidden: bool,
+}
+
+pub struct CreateVaultFileOpts {
+    pub file_name: String,
+    pub size: i64,
+    pub content_type: String,
+    pub salt: Vec<u8>,
+    pub fixed_iv: Vec<u8>,
+    pub is_hidden: bool,
+    pub is_encrypted: bool,
+    pub chunk_size: i32,
+    pub vault_id: i32,
+    pub user_id: i32,
 }
 
 pub struct Database {
@@ -76,36 +93,46 @@ impl Database {
         Ok(user)
     }
 
-    pub async fn create_vault(&self, user_id: i32, name: String, flags: i32) -> Result<Vault> {
+    pub async fn create_vault(
+        &self,
+        user_id: i32,
+        name: String,
+        is_encrypted: bool,
+    ) -> Result<Vault> {
         let vault: Vault = sqlx::query_as(
-            "INSERT INTO vaults (name, flags, kind, user_id) VALUES ($1, $2, $3, $4) RETURNING *",
+            "INSERT INTO vaults (name, user_id, is_encrypted) VALUES ($1, $2, $3) RETURNING *",
         )
         .bind(name)
-        .bind(flags)
-        .bind(0)
         .bind(user_id)
+        .bind(is_encrypted)
         .fetch_one(&self.pool)
         .await?;
 
         Ok(vault)
     }
 
-    pub async fn create_file(
-        &self,
-        file_name: &str,
-        content_type: &str,
-        file_size: i64,
-        vault_id: i64,
-        user_id: i32,
-    ) -> Result<VaultFile> {
+    pub async fn create_file(&self, options: CreateVaultFileOpts) -> Result<VaultFile> {
         let file: VaultFile = sqlx::query_as(
-            "INSERT INTO vault_files (file_name, size, vault_id, user_id, created_at, content_type) VALUES ($1, $2, $3, $4, NOW(), $5) RETURNING *",
+            "INSERT INTO 
+                vault_files (
+                    file_name, size, vault_id, user_id, 
+                    created_at, content_type, password_salt, fixed_iv,
+                    is_hidden, is_encrypted, chunk_size
+                )
+                VALUES ($1, $2, $3, $4, NOW(), $5, $6, $7, $8, $9, $10) 
+                RETURNING *
+            ",
         )
-        .bind(file_name)
-        .bind(file_size)
-        .bind(vault_id)
-        .bind(user_id)
-        .bind(content_type)
+        .bind(options.file_name)
+        .bind(options.size)
+        .bind(options.vault_id)
+        .bind(options.user_id)
+        .bind(options.content_type)
+        .bind(options.salt)
+        .bind(options.fixed_iv)
+        .bind(options.is_hidden)
+        .bind(options.is_encrypted)
+        .bind(options.chunk_size)
         .fetch_one(&self.pool)
         .await?;
 
@@ -142,6 +169,11 @@ impl Database {
     }
 
     pub async fn delete_vault(&self, user_id: i32, vault_id: i64) -> Result<()> {
+        sqlx::query("DELETE FROM vault_files WHERE vault_id = $1")
+            .bind(vault_id)
+            .execute(&self.pool)
+            .await?;
+
         sqlx::query("DELETE FROM vaults WHERE user_id = $1 AND id = $2")
             .bind(user_id)
             .bind(vault_id)

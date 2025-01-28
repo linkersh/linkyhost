@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { Input } from '@/components/ui/input';
+	import { userCreate } from '@/api';
+	import { goto } from '$app/navigation';
 	import * as Card from '$lib/components/ui/card/';
 	import Button from '@/components/ui/button/button.svelte';
 	import Label from '@/components/ui/label/label.svelte';
-	import { userLogin } from '@/api';
-	import { goto } from '$app/navigation';
 
 	let username = $state('');
 	let password = $state('');
@@ -20,7 +20,7 @@
 	async function login() {
 		isLoggingIn = true;
 		try {
-			const response = await userLogin({ username, password });
+			const response = await userCreate({ username, password });
 			if (response.status === 'error') {
 				error = 'Invalid username or password';
 			} else {
@@ -28,16 +28,16 @@
 				goto('/dash');
 			}
 		} catch (err) {
-            console.error(err)
+			console.error(err);
 		}
-        isLoggingIn = false;
+		isLoggingIn = false;
 	}
 </script>
 
 <div class="flex h-screen w-screen flex-col items-center justify-center">
 	<Card.Root class="w-full md:w-3/4 lg:w-2/6">
 		<Card.Header>
-			<Card.Title>Login to linykhost</Card.Title>
+			<Card.Title>Sign up to linykhost</Card.Title>
 		</Card.Header>
 
 		<Card.Content>
@@ -51,14 +51,14 @@
 				<Input type="password" bind:value={password} />
 			</div>
 
-            {#if error}
-                <p class="text-red-500 mt-4">{error}</p>
-            {/if}
+			{#if error}
+				<p class="mt-4 text-red-500">{error}</p>
+			{/if}
 
-			<Button disabled={!isEnabled} onclick={login} class="mt-4 w-full">Login</Button>
+			<Button disabled={!isEnabled} onclick={login} class="mt-4 w-full">Create Account</Button>
 
-			<p class="text-muted-foreground text-sm mt-4">
-				Don't have an account? <a class="underline" href="/signup">Sign up</a> instead.
+			<p class="text-muted-foreground mt-4 text-sm">
+				Already have an account? <a class="underline" href="/login">Login</a> instead.
 			</p>
 		</Card.Content>
 	</Card.Root>

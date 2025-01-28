@@ -1,15 +1,19 @@
-use std::path::Path;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{
+    io::BufWriter,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 use anyhow::Result;
+use fast_image_resize::{images::Image, IntoImageView, ResizeOptions, Resizer};
+use image::{codecs::avif::AvifEncoder, ImageEncoder, ImageFormat, ImageReader};
 use lazy_static::lazy_static;
-use libvips::ops;
-use libvips::VipsImage;
-use tokio::fs::{self, File, OpenOptions};
-use tokio::io::BufReader;
-use tokio::sync::OnceCell;
+use tokio::{
+    fs::{self, File, OpenOptions},
+    io::BufReader,
+    sync::OnceCell,
+};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -19,19 +23,12 @@ lazy_static! {
     pub static ref STORAGE_DIR: OnceCell<String> = OnceCell::new();
 }
 
-fn calculate_scale(src_width: u32, src_height: u32, dst_width: u32, dst_height: u32) -> f64 {
-    let width_scale = dst_width as f64 / src_width as f64;
-    let height_scale = dst_height as f64 / src_height as f64;
-
-    // Return the minimum scale to preserve aspect ratio
-    width_scale.min(height_scale)
-}
-
 pub struct ThumbOptions {
-    pub width: u32,
-    pub height: u32,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
     pub vault_id: i64,
     pub file_id: i64,
+    pub content_type: String,
 }
 
 pub struct Thumbnail {
@@ -65,30 +62,42 @@ impl Thumbnail {
 
         let dst_height = self.options.height;
         let dst_width = self.options.width;
+        let mime_type = self.options.content_type.clone();
 
         let tmp_file_id = tokio::task::spawn_blocking(move || -> anyhow::Result<Uuid> {
-            let image = VipsImage::new_from_file(path.to_str().unwrap())?;
-            let src_height = image.get_height();
-            let src_width = image.get_width();
-            let scale = calculate_scale(src_width as u32, src_height as u32, dst_width, dst_height);
+            let mut src_image = ImageReader::open(path.to_str().unwrap())?;
+            src_image
+                .set_format(ImageFormat::from_mime_type(&mime_type).unwrap_or(ImageFormat::Jpeg));
 
-            let resized = ops::resize(&image, scale)?;
-            let options = ops::JpegsaveOptions {
-                q: 90,
-                background: vec![255.0],
-                optimize_coding: true,
-                optimize_scans: true,
-                interlace: true,
-                ..ops::JpegsaveOptions::default()
-            };
+            let src_image = src_image.decode()?;
+            let dst_width = dst_width.unwrap_or(src_image.width());
+            let dst_height = dst_height.unwrap_or(src_image.height());
 
             let tmp_file_id = Uuid::new_v4();
-            // we dont need to create a temp file lol
-            // let tmp = state_cl.store.create_temp_file_sync(tmp_file_id)?;
-
             let temp_file_path = state_cl.store.get_temp_path(tmp_file_id);
             let temp_file_path = temp_file_path.to_str().unwrap();
-            ops::jpegsave_with_opts(&resized, temp_file_path, &options)?;
+
+            let file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(temp_file_path)?;
+            let result_buf = BufWriter::new(file);
+            let mut dst_image = Image::new(dst_width, dst_height, src_image.pixel_type().unwrap());
+            let mut resizer = Resizer::new();
+            resizer.resize(
+                &src_image,
+                &mut dst_image,
+                &Some(ResizeOptions::new().fit_into_destination(None)),
+            )?;
+
+            let buffer = dst_image.into_vec();
+            AvifEncoder::new_with_speed_quality(result_buf, 10, 60).write_image(
+                &buffer,
+                dst_width,
+                dst_height,
+                src_image.color().into(),
+            )?;
+
             Ok(tmp_file_id)
         })
         .await??;

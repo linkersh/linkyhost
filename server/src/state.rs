@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use anyhow::{Error, Result};
-use libvips::VipsApp;
 use tokio_util::sync::CancellationToken;
 
 use crate::{auth::Auther, config::AppConfig, db::Database, store::FsStore, uploader::Uploader};
@@ -13,7 +12,7 @@ pub struct AppStateRef {
     pub store: FsStore,
     pub config: AppConfig,
     pub auther: Auther,
-    pub _vips: VipsApp,
+    // pub _vips: VipsApp,
     pub uploader: Uploader,
 }
 
@@ -27,8 +26,6 @@ pub async fn create_state(config: AppConfig, cancel: CancellationToken) -> Resul
     let database = Database::new(&config).await?;
     let auther = Auther::new(&config.auth.secret)?;
     let uploader = Uploader::new();
-    let vips = VipsApp::new("linkyhost", true)?;
-    vips.concurrency_set(std::thread::available_parallelism()?.get() as i32);
 
     Ok(Arc::new(AppStateRef {
         store,
@@ -36,6 +33,5 @@ pub async fn create_state(config: AppConfig, cancel: CancellationToken) -> Resul
         config,
         auther,
         uploader,
-        _vips: vips,
     }))
 }

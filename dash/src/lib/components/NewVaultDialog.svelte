@@ -6,24 +6,23 @@
 	import Switch from './ui/switch/switch.svelte';
 	import Button from './ui/button/button.svelte';
 	import { Plus } from 'lucide-svelte';
-	import { createVault, VaultFlags } from '@/api/vaults';
+	import { createVault } from '@/api/vaults';
 	import { activeVault, vaultStore } from '@/stores';
 
 	let vaultName = $state('');
+	let password = $state('');
 	let enableOCR = $state(false);
 	let enableEncrypt = $state(false);
-	let createBtnEnable = $derived(vaultName.length > 2);
+	let createBtnEnable = $derived(
+		vaultName.length > 2 && (enableEncrypt ? password.length > 8 : true)
+	);
 	let dialogOpen = $state(false);
 
 	async function createBtnClick() {
-		let flags = 0;
-		if (enableOCR) {
-			flags |= VaultFlags.OCR;
-		}
-		if (enableEncrypt) {
-			flags |= VaultFlags.Encrypted;
-		}
-		const vault = await createVault({ name: vaultName, flags });
+		const vault = await createVault({ name: vaultName, is_encrypted: enableEncrypt });
+
+		if (enableEncrypt){}
+
 		vaultStore.update((x) => {
 			x.push(vault);
 			return x;
@@ -70,6 +69,18 @@
 				<Label>Encrypt</Label>
 				<Switch bind:checked={enableEncrypt}></Switch>
 			</div>
+
+			{#if enableEncrypt}
+				<div class="my-2 grid gap-1.5">
+					<Label for="password">Choose a password</Label>
+					<Input bind:value={password} type="password" />
+					<p class="text-muted-foreground text-sm">
+						Make sure to remember this password or write it down somewhere As you wont be able to
+						ever recover this data without the correct password. Min. 8 characters
+					</p>
+				</div>
+			{/if}
+
 			<Button onclick={createBtnClick} disabled={!createBtnEnable}>Create Vault</Button>
 		</div>
 	</Dialog.Content>

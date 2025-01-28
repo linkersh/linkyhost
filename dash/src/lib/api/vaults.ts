@@ -4,20 +4,24 @@ export interface Vault {
 	id: number;
 	name: string;
 	user_id: number;
-	kind: number;
 	created_at: string;
-	flags: number;
+	is_encrypted: boolean;
 }
 
 export interface VaultFile {
 	id: number;
 	vault_id: number;
 	user_id: number;
-	name: string;
+	file_name: string;
 	size: number;
 	created_at: string;
 	uploaded_at: string;
 	content_type: string;
+	is_encrypted: boolean;
+	is_hidden: boolean;
+	fixed_iv: number[];
+	password_salt: number[];
+	chunk_size: number;
 }
 
 export async function fetchVaults(): Promise<Vault[]> {
@@ -47,11 +51,11 @@ export enum VaultFlags {
 
 export interface CreateVaultInfo {
 	name: string;
-	flags: number;
+	is_encrypted: boolean;
 }
 
-export async function createVault({ name, flags }: CreateVaultInfo): Promise<Vault> {
-	const vault = await kyc.post<Vault>(`vaults/create`, { json: { name, flags, kind: 2 } }).json();
+export async function createVault({ name, is_encrypted }: CreateVaultInfo): Promise<Vault> {
+	const vault = await kyc.post<Vault>(`vaults/create`, { json: { name, is_encrypted } }).json();
 	return vault;
 }
 
@@ -85,8 +89,12 @@ export async function beginUpload({
 		.json();
 }
 
-// export interface GroupUploadFile {
-// 	file: File;
-// }
+export interface DownloadFileInfo {
+	vaultId: number;
+	fileId: number;
+}
 
-// export async function groupUpload({}) {}
+export async function downloadFile({ vaultId, fileId }: DownloadFileInfo): Promise<Blob> {
+	const response = await kyc.get(`vaults/${vaultId}/files/${fileId}/download`);
+	return await response.blob();
+}

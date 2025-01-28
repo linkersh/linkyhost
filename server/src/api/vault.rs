@@ -9,7 +9,6 @@ use axum_typed_multipart::{
     FieldData, TryFromField, TryFromMultipart, TypedMultipart, TypedMultipartError,
 };
 use chrono::Utc;
-use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 use tokio::{
@@ -20,7 +19,7 @@ use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
 use crate::{
-    db::VaultFile,
+    db::{CreateVaultFileOpts, VaultFile},
     state::AppState,
     store::{ThumbOptions, Thumbnail, STORAGE_DIR},
     uploader::CreateUploadInfo,
@@ -40,12 +39,13 @@ pub fn router() -> Router<AppState> {
         .route("/{id}/delete", post(delete_vault))
         .route("/{vaultId}/files", get(list_files))
         .route("/{vaultId}/files/{fileId}/thumbnail", get(file_thumb))
+        .route("/{vaultId}/files/{fileId}/download", get(file_download))
 }
 
 #[derive(Deserialize, Debug)]
 pub struct CreateVaultInfo {
     name: String,
-    flags: i32,
+    is_encrypted: bool,
 }
 
 pub async fn create_vault(
@@ -58,7 +58,7 @@ pub async fn create_vault(
     }
     let vault = state
         .database
-        .create_vault(claims.sub, body.name, body.flags)
+        .create_vault(claims.sub, body.name, body.is_encrypted)
         .await?;
     Ok(Json(vault))
 }
@@ -76,7 +76,15 @@ pub async fn delete_vault(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<impl IntoResponse, ApiError> {
+    let vault = state.database.get_vault_by_id(claims.sub, id).await?;
+    if vault.is_none() {
+        return Err(ApiError::NotFound(
+            "Vault not found or you dont own it".to_string(),
+        ));
+    }
+
     state.database.delete_vault(claims.sub, id).await?;
+    state.store.delete_vault(id).await?;
     Ok(Json(()))
 }
 
@@ -127,6 +135,11 @@ pub struct GroupUploadMeta {
     file_name: String,
     file_size: u64,
     content_type: String,
+    salt: Vec<u8>,
+    fixed_iv: Vec<u8>,
+    is_hidden: bool,
+    is_encrypted: bool,
+    chunk_size: i32,
 }
 
 pub struct StoreTempFile {
@@ -170,6 +183,10 @@ impl TryFromField for StoreTempFile {
                 .map_err(|x| TypedMultipartError::Other { source: x.into() })?;
         }
 
+        writer
+            .flush()
+            .await
+            .map_err(|x| TypedMultipartError::Other { source: x.into() })?;
         let file = writer.into_inner();
         Ok(StoreTempFile {
             file,
@@ -200,15 +217,22 @@ pub async fn group_upload(
     }
 
     for (file, meta) in data.iter().zip(metas) {
+        println!("file size: {}", file.file.metadata().await?.len());
+
         let db_file = state
             .database
-            .create_file(
-                &meta.file_name,
-                &meta.content_type,
-                meta.file_size as i64,
-                vault_id,
-                claims.sub,
-            )
+            .create_file(CreateVaultFileOpts {
+                chunk_size: meta.chunk_size,
+                content_type: meta.content_type,
+                file_name: meta.file_name,
+                size: meta.file_size as i64,
+                fixed_iv: meta.fixed_iv,
+                is_encrypted: meta.is_encrypted,
+                is_hidden: meta.is_hidden,
+                salt: meta.salt,
+                user_id: claims.sub,
+                vault_id: vault_id as i32,
+            })
             .await?;
 
         state
@@ -276,24 +300,24 @@ pub async fn upload_chunk(
 
     upload.tmp_file.flush().await?;
     if upload.received_size == upload.expected_size {
-        let file = state
-            .database
-            .create_file(
-                &upload.file_name,
-                &upload.content_type,
-                upload.received_size as i64,
-                upload.vault_id,
-                upload.user_id,
-            )
-            .await?;
+        // let file = state
+        //     .database
+        //     .create_file(
+        //         &upload.file_name,
+        //         &upload.content_type,
+        //         upload.received_size as i64,
+        //         upload.vault_id,
+        //         upload.user_id,
+        //     )
+        //     .await?;
 
-        // let upload_start = Instant::now();
+        // // let upload_start = Instant::now();
 
-        let tmp_file_path = state.store.get_temp_path(upload.id);
-        state
-            .store
-            .upload_file_from_path(upload.vault_id, file.id as i64, &tmp_file_path)
-            .await?;
+        // let tmp_file_path = state.store.get_temp_path(upload.id);
+        // state
+        //     .store
+        //     .upload_file_from_path(upload.vault_id, file.id as i64, &tmp_file_path)
+        //     .await?;
     }
 
     drop(upload);
@@ -354,10 +378,11 @@ pub async fn file_thumb(
     }
 
     let options = ThumbOptions {
-        width: 256,
-        height: 256,
+        width: None,
+        height: None,
         vault_id,
         file_id,
+        content_type: file.content_type.to_owned(),
     };
 
     let thumbnail = Thumbnail::new(options, state.clone());
@@ -365,8 +390,29 @@ pub async fn file_thumb(
     let thumb_file = File::open(thumb_path).await?;
     let body = Body::from_stream(ReaderStream::new(thumb_file));
     let res = Response::builder()
-        .header("Content-Type", file.content_type)
+        .header("Content-Type", "image/avif")
         .body(body)?;
 
+    Ok(res)
+}
+
+pub async fn file_download(
+    ExtractClaims(claims): ExtractClaims,
+    State(state): State<AppState>,
+    Path((vault_id, file_id)): Path<(i64, i64)>,
+) -> Result<impl IntoResponse, ApiError> {
+    let vault = state.database.get_vault_by_id(claims.sub, vault_id).await?;
+    if vault.is_none() {
+        return Err(ApiError::NotFound(
+            "Vault not found or you dont own it".to_string(),
+        ));
+    }
+
+    let file = state.database.get_file_by_id(vault_id, file_id).await?;
+    let reader = state.store.get_file_reader(vault_id, file_id).await?;
+    let body = Body::from_stream(ReaderStream::new(reader));
+    let res = Response::builder()
+        .header("Content-Type", file.content_type)
+        .body(body)?;
     Ok(res)
 }

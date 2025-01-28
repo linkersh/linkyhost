@@ -1,9 +1,9 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import { Plus } from 'lucide-svelte';
 	import { uploader } from '@/uploads';
 	import Button from '../ui/button/button.svelte';
 	import FileList from './FileList.svelte';
-	import { Plus } from 'lucide-svelte';
 
 	let isDragging = $state(false);
 	let dialogOpen = $state(false);
@@ -49,7 +49,10 @@
 	}
 
 	async function startUpload() {
-		uploader.addUpload(files, vaultId);
+		uploader.addUpload(vaultId, files, {
+			enabled: true,
+			password: sessionStorage.getItem(`vault_${vaultId}_password`)!
+		});
 		dialogOpen = false;
 		files = [];
 	}

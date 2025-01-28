@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { VaultFile } from '@/api/vaults';
+	import { downloadFile, type VaultFile } from '@/api/vaults';
+	import { decryptFile } from '@/encryption';
 	import { onDestroy, onMount } from 'svelte';
 
 	const file: VaultFile = $props();
@@ -7,11 +8,27 @@
 	let ourl = $state<string | undefined>();
 
 	onMount(async () => {
-		const req = await fetch(url, {
-			headers: { Authorization: `${localStorage.getItem('token')}` }
-		});
-		const body = await req.blob();
-		ourl = URL.createObjectURL(body);
+		if (file.is_encrypted) {
+			const blob = await downloadFile({ vaultId: file.vault_id, fileId: file.id });
+			const salt = Uint8Array.from(file.password_salt);
+			const fixedIv = Uint8Array.from(file.fixed_iv);
+			const data = await decryptFile(
+				blob,
+				salt,
+				fixedIv,
+				file.chunk_size,
+				sessionStorage.getItem(`vault_${file.vault_id}_password`)!
+			);
+
+			const url = URL.createObjectURL(data);
+			ourl = url;
+		} else {
+			const req = await fetch(url, {
+				headers: { Authorization: `${localStorage.getItem('token')}` }
+			});
+			const body = await req.blob();
+			ourl = URL.createObjectURL(body);
+		}
 	});
 
 	onDestroy(() => {
@@ -22,5 +39,16 @@
 </script>
 
 {#if ourl}
-	<img alt="skibidi toilet" class="w-full h-56 object-cover rounded-lg" src={ourl} />
+	<img
+		alt={file.file_name}
+		class="imageGridItem m-2 h-auto w-full rounded-lg object-cover"
+		src={ourl}
+	/>
 {/if}
+
+<style>
+	img {
+		max-width: 100%;
+		display: block;
+	}
+</style>

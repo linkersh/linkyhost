@@ -1,6 +1,8 @@
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { v4 } from 'uuid';
 import { beginUpload } from './api/vaults';
+import { activeVault, refreshActiveVaultFiles } from './stores';
+import { encryptFile } from './encryption';
 
 export const CHUNK_SIZE = 90 * 1024 * 1024;
 
@@ -8,9 +10,19 @@ export interface GroupUploadMeta {
 	file_name: string;
 	file_size: number;
 	content_type: string;
+	salt: number[];
+	fixed_iv: number[];
+	is_hidden: boolean;
+	is_encrypted: boolean;
+	chunk_size: number;
 }
 
 export type ActiveUploadStatus = 'pending' | 'uploading' | 'cancelled' | 'completed' | 'errored';
+
+export interface ActiveUploadEncryption {
+	enabled: boolean;
+	password: string;
+}
 
 export interface ActiveUpload {
 	id: string;
@@ -21,6 +33,7 @@ export interface ActiveUpload {
 	totalSize: number;
 	transferredSize: number;
 	currentFileName?: string;
+	encryption?: ActiveUploadEncryption;
 }
 
 export const uploadStore = writable<ActiveUpload[]>([]);
@@ -45,16 +58,45 @@ export class UploadManager {
 			let tempFileStore: File[] = [];
 			let totalFileSize = 0;
 
-			for (const file of upload.files) {
+			for (let file of upload.files) {
+				let realFile = file;
 				if (file.size < CHUNK_SIZE) {
 					// lets collect more files :3
-					tempFileStore.push(file);
 					totalFileSize += file.size;
 
-					const fileMetadata = {
+					// we gotta start encrypting
+					let chunk_size = 0;
+					let fixed_iv = [] as number[],
+						salt = [] as number[];
+					let is_encrypted = false,
+						is_hidden = false;
+
+					if (upload.encryption) {
+						const encrypted = await encryptFile(file, upload.encryption.password);
+						chunk_size = encrypted.chunkSize;
+						is_encrypted = true;
+						fixed_iv = Array.from(encrypted.fixedIv);
+						salt = Array.from(encrypted.salt);
+
+						console.log('encrypted', 'fixed iv', fixed_iv, 'salt', salt);
+
+						const blob = encrypted.encryptedData;
+						realFile = new File([blob], file.name, {
+							lastModified: file.lastModified,
+							type: file.type
+						});
+					}
+
+					tempFileStore.push(realFile);
+					const fileMetadata: GroupUploadMeta = {
 						file_name: file.name,
 						file_size: file.size,
-						content_type: file.type
+						content_type: file.type,
+						chunk_size,
+						fixed_iv,
+						salt,
+						is_encrypted,
+						is_hidden
 					};
 					metadata.push(fileMetadata);
 
@@ -77,9 +119,9 @@ export class UploadManager {
 							break;
 						}
 
-						tempFileStore = [file];
+						tempFileStore = [realFile];
 						metadata = [fileMetadata];
-						totalFileSize = file.size;
+						totalFileSize = realFile.size;
 						continue;
 					}
 				}
@@ -105,6 +147,12 @@ export class UploadManager {
 				up.status = status;
 				return up;
 			});
+
+			if (status === 'completed' && get(activeVault)?.id === upload.vaultId) {
+				refreshActiveVaultFiles({ limit: 100, skip: 0, vaultId: upload.vaultId }).catch(
+					console.error
+				);
+			}
 		} catch (err) {
 			console.error(err);
 			this.updateUploadState(upload.id, (up) => {
@@ -269,7 +317,7 @@ export class UploadManager {
 		});
 	}
 
-	addUpload(files: File[], vaultId: number) {
+	addUpload(vaultId: number, files: File[], encryption?: ActiveUploadEncryption) {
 		const id = v4();
 		let totalSize = 0;
 		for (const file of files) {
@@ -283,7 +331,8 @@ export class UploadManager {
 			totalSize,
 			abortController: new AbortController(),
 			status: 'pending',
-			transferredSize: 0
+			transferredSize: 0,
+			encryption
 		};
 
 		uploadStore.update((u) => {

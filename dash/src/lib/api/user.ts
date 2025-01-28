@@ -26,8 +26,9 @@ export const userLogin = async (info: LoginInfo): Promise<LoginResult> => {
 	}
 };
 
+
 export const userCreate = async (info: LoginInfo): Promise<LoginResult> => {
-	const response = await kyc.post('users/login', { json: info });
+	const response = await kyc.post('users/create', { json: info });
 	if (response.status !== 200) {
 		return { status: 'error' };
 	}

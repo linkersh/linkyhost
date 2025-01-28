@@ -2,7 +2,7 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index';
 	import * as Collapsible from '$lib/components/ui/collapsible/index';
-	import { ChevronUp, Trash2, LogOut, Box } from 'lucide-svelte';
+	import { ChevronUp, Trash2, LogOut, Box, FolderLock } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import { fetchVaults, type Vault } from '@/api/vaults';
 	import { activeVault, vaultStore } from '@/stores';
@@ -43,27 +43,19 @@
 									{#each $vaultStore as vault}
 										<Sidebar.MenuSubItem
 											onclick={() => selectVault(vault)}
-											class="hover:bg-secondary select-none break-words rounded-md px-2 py-1 transition-colors"
-											>{vault.name}</Sidebar.MenuSubItem
+											class="hover:bg-secondary flex select-none flex-row items-center justify-between break-words rounded-md px-2 py-1 transition-colors"
 										>
+											<span>{vault.name}</span>
+
+											{#if vault.is_encrypted}
+												<FolderLock size="14"></FolderLock>
+											{/if}
+										</Sidebar.MenuSubItem>
 									{/each}
 								</Sidebar.MenuSub>
 							</Collapsible.Content>
 						</Sidebar.MenuItem>
 					</Collapsible.Root>
-
-					<!-- {#each items as item (item.title)}
-						<Sidebar.MenuItem>
-							<Sidebar.MenuButton>
-								{#snippet child({ props })}
-									<a href={item.url} {...props}>
-										<item.icon />
-										<span>{item.title}</span>
-									</a>
-								{/snippet}
-							</Sidebar.MenuButton>
-						</Sidebar.MenuItem>
-					{/each} -->
 				</Sidebar.Menu>
 			</Sidebar.GroupContent>
 		</Sidebar.Group>
