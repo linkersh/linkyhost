@@ -8,6 +8,8 @@
 	import { Plus } from 'lucide-svelte';
 	import { createVault } from '@/api/vaults';
 	import { activeVault, vaultStore } from '@/stores';
+	import type { GroupUploadMeta } from '@/uploads';
+	import { encryptFile } from '@/encryption';
 
 	let vaultName = $state('');
 	let password = $state('');
@@ -21,7 +23,47 @@
 	async function createBtnClick() {
 		const vault = await createVault({ name: vaultName, is_encrypted: enableEncrypt });
 
-		if (enableEncrypt){}
+		if (enableEncrypt) {
+			const payload = { version: 1, vaultId: vault.id };
+			const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+
+			// We need to create a check file
+			// A check file is used to verify whether a password is valid when decrypting a vault.
+
+			const encrypted = await encryptFile(blob, password);
+			console.log('[GROUP UPLOAD] attempting to upload vault check file');
+
+			const file = new File([encrypted.encryptedData], '__vault_check_file', {
+				type: 'application/json'
+			});
+
+			const formData = new FormData();
+			const url = `http://127.0.0.1:8080/api/vaults/${vault.id}/groupUpload`;
+			const metadata: GroupUploadMeta = {
+				chunk_size: encrypted.chunkSize,
+				content_type: blob.type,
+				file_name: file.name,
+				file_size: encrypted.encryptedData.size,
+				is_encrypted: true,
+				is_hidden: true,
+				fixed_iv: Array.from(encrypted.fixedIv),
+				salt: Array.from(encrypted.salt)
+			};
+
+			formData.append('data', file);
+			formData.append('metadata', JSON.stringify([metadata]));
+
+			const req = await fetch(url, {
+				method: 'POST',
+				body: formData,
+				headers: {
+					Authorization: localStorage.getItem('token')!
+				}
+			});
+			if (req.status >= 400) {
+				console.error(`failed to create vault check file: ${req.statusText}`);
+			}
+		}
 
 		vaultStore.update((x) => {
 			x.push(vault);

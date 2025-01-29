@@ -42,16 +42,34 @@ export class UploadManager {
 	private queue: ActiveUpload[] = [];
 	private isProcessing: boolean = false;
 
+	private setUploadStatus(uploadId: string, status: ActiveUploadStatus) {
+		this.updateUploadState(uploadId, (up) => {
+			up.status = status;
+			return up;
+		});
+	}
+
+	private setUploadFileName(uploadId: string, fileName?: string) {
+		this.updateUploadState(uploadId, (up) => {
+			up.currentFileName = fileName;
+			return up;
+		});
+	}
+
+	private incUploadTransferred(uploadId: string, transferred: number) {
+		this.updateUploadState(uploadId, (up) => {
+			up.transferredSize = up.transferredSize + transferred;
+			return up;
+		});
+	}
+
 	async processQueue() {
 		if (this.isProcessing || this.queue.length === 0) {
 			return;
 		}
 
 		const upload = this.queue.shift()!;
-		this.updateUploadState(upload.id, (up) => {
-			up.status = 'uploading';
-			return up;
-		});
+		this.setUploadStatus(upload.id, 'uploading');
 
 		try {
 			let metadata: GroupUploadMeta[] = [];
@@ -143,10 +161,7 @@ export class UploadManager {
 			}
 
 			const status = upload.abortController.signal.aborted ? 'cancelled' : 'completed';
-			this.updateUploadState(upload.id, (up) => {
-				up.status = status;
-				return up;
-			});
+			this.setUploadStatus(upload.id, status);
 
 			if (status === 'completed' && get(activeVault)?.id === upload.vaultId) {
 				refreshActiveVaultFiles({ limit: 100, skip: 0, vaultId: upload.vaultId }).catch(
@@ -155,10 +170,7 @@ export class UploadManager {
 			}
 		} catch (err) {
 			console.error(err);
-			this.updateUploadState(upload.id, (up) => {
-				up.status = 'errored';
-				return up;
-			});
+			this.setUploadStatus(upload.id, 'errored');
 		} finally {
 			this.isProcessing = false;
 			setTimeout(() => {
@@ -179,11 +191,7 @@ export class UploadManager {
 			fileSize: file.size
 		});
 
-		this.updateUploadState(uploadId, (up) => {
-			up.currentFileName = file.name;
-			return up;
-		});
-
+		this.setUploadFileName(uploadId, file.name);
 		try {
 			const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
@@ -199,11 +207,50 @@ export class UploadManager {
 		} catch (err) {
 			throw err;
 		} finally {
-			this.updateUploadState(uploadId, (up) => {
-				up.currentFileName = undefined;
-				return up;
-			});
+			this.setUploadFileName(uploadId, undefined);
 		}
+	}
+
+	async createXHRequest(
+		url: string,
+		formData: FormData,
+		uploadId: string,
+		abortSignal: AbortSignal
+	) {
+		return new Promise((resolve, reject) => {
+			const xhr = new XMLHttpRequest();
+			let previousLoaded = 0;
+
+			xhr.upload.addEventListener('progress', (event) => {
+				if (event.lengthComputable) {
+					const incrementalBytesTransferred = event.loaded - previousLoaded;
+					previousLoaded = event.loaded;
+
+					this.incUploadTransferred(uploadId, incrementalBytesTransferred);
+				}
+			});
+
+			xhr.addEventListener('load', () => {
+				if (xhr.status >= 200 && xhr.status < 300) {
+					resolve(xhr.response);
+				} else {
+					reject(new Error('Failed to upload chunk'));
+				}
+			});
+
+			xhr.addEventListener('error', () => {
+				reject(new Error('Failed to upload chunk'));
+			});
+
+			abortSignal.addEventListener('abort', () => {
+				xhr.abort();
+				resolve(undefined);
+			});
+
+			xhr.open('POST', url, true);
+			xhr.setRequestHeader('Authorization', localStorage.getItem('token') || '');
+			xhr.send(formData);
+		});
 	}
 
 	async uploadGroup(
@@ -222,88 +269,14 @@ export class UploadManager {
 			formData.append('data', f);
 		}
 		formData.append('metadata', JSON.stringify(metadata));
-
-		return new Promise((resolve, reject) => {
-			const xhr = new XMLHttpRequest();
-			let previousLoaded = 0;
-
-			xhr.upload.addEventListener('progress', (event) => {
-				if (event.lengthComputable) {
-					const incrementalBytesTransferred = event.loaded - previousLoaded;
-					previousLoaded = event.loaded;
-
-					this.updateUploadState(uploadId, (up) => {
-						up.transferredSize = up.transferredSize + incrementalBytesTransferred;
-						return up;
-					});
-				}
-			});
-
-			xhr.addEventListener('load', () => {
-				if (xhr.status >= 200 && xhr.status < 300) {
-					resolve(xhr.response);
-				} else {
-					reject(new Error('Failed to upload chunk'));
-				}
-			});
-
-			xhr.addEventListener('error', () => {
-				reject(new Error('Failed to upload chunk'));
-			});
-
-			abortSignal.addEventListener('abort', () => {
-				xhr.abort();
-				resolve(undefined);
-			});
-
-			xhr.open('POST', url, true);
-			xhr.setRequestHeader('Authorization', localStorage.getItem('token') || '');
-			xhr.send(formData);
-		});
+		return await this.createXHRequest(url, formData, uploadId, abortSignal);
 	}
 
 	async uploadChunk(uploadId: string, operationId: string, abortSignal: AbortSignal, chunk: Blob) {
 		const formData = new FormData();
 		const url = `http://127.0.0.1:8080/api/vaults/uploads/${operationId}/chunk`;
 		formData.append('data', chunk);
-
-		return new Promise((resolve, reject) => {
-			const xhr = new XMLHttpRequest();
-			let previousLoaded = 0;
-
-			xhr.upload.addEventListener('progress', (event) => {
-				if (event.lengthComputable) {
-					const incrementalBytesTransferred = event.loaded - previousLoaded;
-					previousLoaded = event.loaded;
-
-					this.updateUploadState(uploadId, (up) => {
-						up.transferredSize = up.transferredSize + incrementalBytesTransferred;
-						return up;
-					});
-				}
-			});
-
-			xhr.addEventListener('load', () => {
-				if (xhr.status >= 200 && xhr.status < 300) {
-					resolve(xhr.response);
-				} else {
-					reject(new Error('Failed to upload chunk'));
-				}
-			});
-
-			xhr.addEventListener('error', () => {
-				reject(new Error('Failed to upload chunk'));
-			});
-
-			abortSignal.addEventListener('abort', () => {
-				xhr.abort();
-				resolve(undefined);
-			});
-
-			xhr.open('POST', url, true);
-			xhr.setRequestHeader('Authorization', localStorage.getItem('token') || '');
-			xhr.send(formData);
-		});
+		return await this.createXHRequest(url, formData, uploadId, abortSignal);
 	}
 
 	updateUploadState(uploadId: string, transform: (up: ActiveUpload) => ActiveUpload) {

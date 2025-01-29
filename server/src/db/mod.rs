@@ -84,6 +84,21 @@ impl Database {
         Ok(file)
     }
 
+    pub async fn get_file_by_name(
+        &self,
+        vault_id: i64,
+        name: &str,
+    ) -> Result<VaultFile> {
+        let file: VaultFile = sqlx::query_as(
+            "select * from vault_files where vault_id = $1 and file_name = $2",
+        )
+        .bind(vault_id)
+        .bind(name)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(file)
+    }
+
     pub async fn get_user_by_name(&self, username: String) -> Result<Option<User>> {
         let user: Option<User> = sqlx::query_as("SELECT * FROM users WHERE username = $1")
             .bind(username)

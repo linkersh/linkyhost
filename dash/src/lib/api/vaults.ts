@@ -98,3 +98,8 @@ export async function downloadFile({ vaultId, fileId }: DownloadFileInfo): Promi
 	const response = await kyc.get(`vaults/${vaultId}/files/${fileId}/download`);
 	return await response.blob();
 }
+
+export async function getCheckFile(vaultId: number): Promise<VaultFile> {
+	const response = await kyc.get<VaultFile>(`vaults/${vaultId}/getCheckFile`).json();
+	return response;
+}

@@ -13,6 +13,7 @@
 	import UploadDialog from '@/components/upload-dialog/UploadDialog.svelte';
 	import NoThumbnailFile from './NoThumbnailFile.svelte';
 	import Label from '@/components/ui/label/label.svelte';
+	import EncryptedVault from './EncryptedVault.svelte';
 
 	let vaultPassword = $state('');
 	let vaultPwdSubmitEnabled = $derived(vaultPassword.length > 8);
@@ -80,75 +81,6 @@
 	}
 </script>
 
-{#if $activeVault}
-	{#if isUnlocked || !$activeVault.is_encrypted}
-		<div class="flex items-center justify-between">
-			<h1 class="text-4xl font-medium">{$activeVault.name}</h1>
-
-			<div class="flex items-center gap-2">
-				<UploadDialog vaultId={$activeVault.id}></UploadDialog>
-				<DeleteVaultDialog {...$activeVault}></DeleteVaultDialog>
-			</div>
-		</div>
-
-		<div class="mt-4 flex flex-row items-center gap-2">
-			<Input placeholder="Search a file.." />
-
-			<Select.Root value="sortNew" type="single">
-				<Select.Trigger class="w-[180px]">Order by</Select.Trigger>
-				<Select.Content>
-					<Select.Item value="sortNew">Newest</Select.Item>
-					<Select.Item value="sortOld">Oldest</Select.Item>
-					<Select.Item value="sortAZ">A-Z</Select.Item>
-					<Select.Item value="sortZA">Z-A</Select.Item>
-				</Select.Content>
-			</Select.Root>
-		</div>
-
-		<div id="imageGrid">
-			{#each pages as page}
-				<div class="mt-6 w-full columns-5">
-					{#each page as file}
-						{#if file.content_type.startsWith('image/')}
-							<FileThumbnail {...file}></FileThumbnail>
-						{:else}
-							<NoThumbnailFile {...file}></NoThumbnailFile>
-						{/if}
-					{/each}
-				</div>
-			{/each}
-			<div id="sentinel" class="h-4 w-full"></div>
-		</div>
-	{:else}
-		<AlertDialog.Root open={true}>
-			<AlertDialog.Content>
-				<AlertDialog.Header>
-					<AlertDialog.Title>Input password to decrypt vault.</AlertDialog.Title>
-					<AlertDialog.Description>
-						The password will be stored in your session storage as long as this website tab is open.
-					</AlertDialog.Description>
-				</AlertDialog.Header>
-
-				<div class="grid gap-1.5">
-					<Label>Vault password</Label>
-					<Input bind:value={vaultPassword} />
-				</div>
-
-				<AlertDialog.Footer>
-					<AlertDialog.Cancel
-						onclick={() => {
-							activeVault.set(undefined);
-						}}>Cancel</AlertDialog.Cancel
-					>
-					<AlertDialog.Action
-						class={cn(buttonVariants({ variant: 'destructive' }))}
-						onclick={unlockVault}
-						disabled={!vaultPwdSubmitEnabled}
-					>
-						Unlock
-					</AlertDialog.Action>
-				</AlertDialog.Footer>
-			</AlertDialog.Content>
-		</AlertDialog.Root>
-	{/if}
+{#if $activeVault && $activeVault.is_encrypted}
+	<EncryptedVault {...$activeVault}></EncryptedVault>
 {/if}

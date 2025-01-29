@@ -40,6 +40,7 @@ pub fn router() -> Router<AppState> {
         .route("/{vaultId}/files", get(list_files))
         .route("/{vaultId}/files/{fileId}/thumbnail", get(file_thumb))
         .route("/{vaultId}/files/{fileId}/download", get(file_download))
+        .route("/{vaultId}/getCheckFile", get(get_check_file))
 }
 
 #[derive(Deserialize, Debug)]
@@ -415,4 +416,24 @@ pub async fn file_download(
         .header("Content-Type", file.content_type)
         .body(body)?;
     Ok(res)
+}
+
+pub async fn get_check_file(
+    ExtractClaims(claims): ExtractClaims,
+    State(state): State<AppState>,
+    Path(vault_id): Path<i64>,
+) -> Result<impl IntoResponse, ApiError> {
+    let vault = state.database.get_vault_by_id(claims.sub, vault_id).await?;
+    if vault.is_none() {
+        return Err(ApiError::NotFound(
+            "Vault not found or you dont own it".to_string(),
+        ));
+    }
+
+    let file = state
+        .database
+        .get_file_by_name(vault_id, "__vault_check_file")
+        .await?;
+
+    Ok(Json(file))
 }
