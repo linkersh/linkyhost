@@ -1,15 +1,16 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import type { Vault } from '@/api/vaults';
 	import { Plus } from 'lucide-svelte';
+	import { credManager } from '@/credManager';
 	import { uploader } from '@/uploads';
 	import Button from '../ui/button/button.svelte';
 	import FileList from './FileList.svelte';
-	import { credManager } from '@/credManager';
 
 	let isDragging = $state(false);
 	let dialogOpen = $state(false);
 	let files = $state<File[]>([]);
-	let { vaultId }: { vaultId: number } = $props();
+	let vault: Vault = $props();
 
 	type DragOverEv = DragEvent & { currentTarget: EventTarget & HTMLButtonElement };
 	type DragLeaveEv = DragOverEv;
@@ -50,10 +51,16 @@
 	}
 
 	async function startUpload() {
-		uploader.addUpload(vaultId, files, {
-			enabled: true,
-			password: credManager.getPassword(vaultId)! // possibly wanna error out the upload if there is no password
-		});
+		uploader.addUpload(
+			vault.id,
+			files,
+			vault.is_encrypted
+				? {
+						enabled: vault.is_encrypted,
+						password: credManager.getPassword(vault.id)!
+					}
+				: undefined
+		);
 		dialogOpen = false;
 		files = [];
 	}

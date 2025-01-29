@@ -66,7 +66,7 @@
 	<h1 class="text-4xl font-medium">{vault.name}</h1>
 
 	<div class="flex items-center gap-2">
-		<UploadDialog {vaultId}></UploadDialog>
+		<UploadDialog {...vault}></UploadDialog>
 		<DeleteVaultDialog {...vault}></DeleteVaultDialog>
 	</div>
 </div>

@@ -1,11 +1,10 @@
 <script lang="ts">
+    import * as Card from '$lib/components/ui/card/index';
 	import { downloadFile, getCheckFile, type Vault } from '@/api/vaults';
 	import { KeyRound } from 'lucide-svelte';
 	import { decryptFile } from '@/encryption';
 	import { credManager } from '@/credManager';
 	import { onMount } from 'svelte';
-	import { sleep } from '@/utils';
-	import * as Card from '$lib/components/ui/card/index';
 	import Label from '@/components/ui/label/label.svelte';
 	import Input from '@/components/ui/input/input.svelte';
 	import Button from '@/components/ui/button/button.svelte';
