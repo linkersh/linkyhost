@@ -6,21 +6,22 @@
 	import Input from '@/components/ui/input/input.svelte';
 	import Button from '@/components/ui/button/button.svelte';
 	import { decryptFile } from '@/encryption';
+	import FileList from './FileList.svelte';
 
 	const vault: Vault = $props();
 
 	let vaultPassword = $state('');
-	let passwordInvalid = $state(false);
+	let errorMessage = $state('');
 	let isVaultUnlocked = $state(false);
 	let isUnlockEnabled = $derived(vaultPassword.length > 8);
 
 	$effect(() => {
 		vaultPassword;
-		passwordInvalid = false;
+		errorMessage = '';
 	});
 
 	async function unlockVault() {
-		passwordInvalid = false;
+		errorMessage = '';
 		try {
 			const checkFile = await getCheckFile(vault.id);
 			const checkFileData = await downloadFile({
@@ -28,7 +29,7 @@
 				fileId: checkFile.id
 			});
 
-			await decryptFile(
+			const result = await decryptFile(
 				checkFileData,
 				Uint8Array.from(checkFile.password_salt),
 				Uint8Array.from(checkFile.fixed_iv),
@@ -36,16 +37,22 @@
 				vaultPassword
 			);
 
-			console.log('vault decrypted successfully');
+			const checkFileJson = JSON.parse(await result.text());
+			if (checkFileJson.vaultId === vault.id) {
+				console.log('vault decrypted successfully');
+				isVaultUnlocked = true;
+			} else {
+				errorMessage = 'Password is valid, but the check file is invalid, tampered check file.';
+			}
 		} catch (err) {
-			passwordInvalid = true;
+			errorMessage = 'Password is invalid';
 			console.error('failed to decrypt vault', err);
 		}
 	}
 </script>
 
 {#if isVaultUnlocked}
-	<div></div>
+	<FileList {vault}></FileList>
 {:else}
 	<div class="flex h-full w-full flex-row items-center justify-center">
 		<Card.Root>
@@ -60,8 +67,8 @@
 					<Input type="password" bind:value={vaultPassword} />
 				</div>
 
-				{#if passwordInvalid}
-					<p class="text-red-500">Password is invalid</p>
+				{#if errorMessage.length > 0}
+					<p class="text-red-500">{errorMessage}</p>
 				{/if}
 
 				<Button

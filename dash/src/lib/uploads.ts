@@ -1,7 +1,7 @@
 import { get, writable } from 'svelte/store';
 import { v4 } from 'uuid';
 import { beginUpload } from './api/vaults';
-import { activeVault, refreshActiveVaultFiles } from './stores';
+import { activeVault } from './stores';
 import { encryptFile } from './encryption';
 
 export const CHUNK_SIZE = 90 * 1024 * 1024;
@@ -163,11 +163,11 @@ export class UploadManager {
 			const status = upload.abortController.signal.aborted ? 'cancelled' : 'completed';
 			this.setUploadStatus(upload.id, status);
 
-			if (status === 'completed' && get(activeVault)?.id === upload.vaultId) {
-				refreshActiveVaultFiles({ limit: 100, skip: 0, vaultId: upload.vaultId }).catch(
-					console.error
-				);
-			}
+			// if (status === 'completed' && get(activeVault)?.id === upload.vaultId) {
+			// 	refreshActiveVaultFiles({ limit: 100, skip: 0, vaultId: upload.vaultId }).catch(
+			// 		console.error
+			// 	);
+			// }
 		} catch (err) {
 			console.error(err);
 			this.setUploadStatus(upload.id, 'errored');
