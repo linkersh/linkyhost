@@ -4,6 +4,7 @@
 	import { uploader } from '@/uploads';
 	import Button from '../ui/button/button.svelte';
 	import FileList from './FileList.svelte';
+	import { credManager } from '@/credManager';
 
 	let isDragging = $state(false);
 	let dialogOpen = $state(false);
@@ -51,7 +52,7 @@
 	async function startUpload() {
 		uploader.addUpload(vaultId, files, {
 			enabled: true,
-			password: sessionStorage.getItem(`vault_${vaultId}_password`)!
+			password: credManager.getPassword(vaultId)! // possibly wanna error out the upload if there is no password
 		});
 		dialogOpen = false;
 		files = [];

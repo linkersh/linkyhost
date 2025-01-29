@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { downloadFile, type VaultFile } from '@/api/vaults';
+	import Skeleton from '@/components/ui/skeleton/skeleton.svelte';
+	import { credManager } from '@/credManager';
 	import { decryptFile } from '@/encryption';
 	import { onDestroy, onMount } from 'svelte';
 
@@ -17,9 +19,8 @@
 				salt,
 				fixedIv,
 				file.chunk_size,
-				sessionStorage.getItem(`vault_${file.vault_id}_password`)!
+				credManager.getPassword(file.vault_id)! // also possibly check password and error out
 			);
-
 			const url = URL.createObjectURL(data);
 			ourl = url;
 		} else {
@@ -44,6 +45,8 @@
 		class="imageGridItem m-2 h-auto w-full rounded-lg object-cover"
 		src={ourl}
 	/>
+{:else}
+	<Skeleton class="m-2 block min-h-[600px] w-full max-w-full rounded-lg object-cover " />
 {/if}
 
 <style>

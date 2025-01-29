@@ -35,9 +35,11 @@
 					isIntersecting = entries[0].isIntersecting;
 					if (!wasIntersecting && isIntersecting) {
 						console.log('reached bottom of page, loading more');
-						skip += limit;
+						const nextPage = await fetchFiles({ vaultId, limit, skip: skip + limit });
+						if (nextPage.length > 0) {
+							skip += limit;
+						}
 
-						const nextPage = await fetchFiles({ vaultId, limit, skip });
 						pages.push(nextPage); // maybe wont work
 					}
 				},
