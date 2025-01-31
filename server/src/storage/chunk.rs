@@ -5,11 +5,12 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::{
     fs::{File, OpenOptions},
-    io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter},
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter},
 };
 
 const CHUNK_HEADER: [u8; 8] = [102, 212, 109, 199, 255, 10, 45, 3];
 const CHUNK_MAX_SIZE: usize = 1024 * 1024 * 1024 * 2; // 2 Gibibyte
+const PAGE_SIZE: usize = 4096;
 
 pub struct ChunkDataReader {
     reader: BufReader<File>,
@@ -20,8 +21,8 @@ impl ChunkDataReader {
         ChunkDataReader { reader }
     }
 
-    pub async fn read_page(&mut self) -> anyhow::Result<[u8; 4096]> {
-        let mut page = [0u8; 4096];
+    pub async fn read_page(&mut self) -> anyhow::Result<[u8; PAGE_SIZE]> {
+        let mut page = [0u8; PAGE_SIZE];
         self.reader.read_exact(&mut page).await?;
         Ok(page)
     }
@@ -31,7 +32,12 @@ impl ChunkDataReader {
     }
 }
 
-pub struct ChunkPart {}
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ChunkPartHeader {
+    pub len: usize,
+    pub is_terminal: bool,
+    pub file_id: u64,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ChunkInfo {
@@ -56,7 +62,7 @@ impl Chunk {
             .open(&path)
             .await?;
         let mut writer = BufWriter::new(file);
-        let mut page = Vec::with_capacity(4096);
+        let mut page = Vec::with_capacity(PAGE_SIZE);
 
         page.append(&mut CHUNK_HEADER.to_vec());
 
@@ -66,9 +72,9 @@ impl Chunk {
 
         page.append(&mut info_len_bytes);
         page.append(&mut info_bytes);
-        page.resize(4096, 0);
+        page.resize(PAGE_SIZE, 0);
 
-        assert!(page.len() == 4096);
+        assert!(page.len() == PAGE_SIZE);
 
         writer.write_all(&page).await?;
         writer.flush().await?;
@@ -119,20 +125,74 @@ impl Chunk {
         })
     }
 
-    pub async fn write_file(&self, file_size: usize, bytes: &[u8]) -> Result<()> {
-        if file_size + self.len > CHUNK_MAX_SIZE {
-            // well fuck.
-            return Err(Error::msg("well fuck"));
+    pub fn file_fits(&self, mut file_size: usize) -> bool {
+        if file_size % PAGE_SIZE != 0 {
+            file_size += PAGE_SIZE - file_size % PAGE_SIZE;
+        }
+        self.len + file_size + PAGE_SIZE <= CHUNK_MAX_SIZE
+    }
+
+    pub async fn write_file(
+        &mut self,
+        file_size: usize,
+        file_id: u64,
+        mut reader: BufReader<File>,
+    ) -> Result<()> {
+        if !self.file_fits(file_size) {
+            return Err(Error::msg("this is definitely a bug, this function should not be called if the file doesnt not fully fit in the chunk."));
         }
 
-        todo!()
-    }
-}
+        let chunk_part_header = ChunkPartHeader {
+            file_id,
+            len: file_size,
+            is_terminal: true,
+        };
 
-fn bytes_to_u32(bytes: [u8; 4]) -> u32 {
-    u32::from_be_bytes(bytes)
+        let mut header_bytes = bincode::serialize(&chunk_part_header)?;
+
+        let header_len: u32 = header_bytes.len().try_into()?;
+        let mut header_len_bytes = header_len.to_be_bytes().to_vec();
+
+        let mut page = Vec::with_capacity(PAGE_SIZE);
+        page.append(&mut header_len_bytes);
+        page.append(&mut header_bytes);
+
+        assert!(page.len() <= PAGE_SIZE);
+        pad_vec_to_page(&mut page);
+
+        let mut writer = BufWriter::new(&mut self.file);
+        writer.write_all(&page).await?;
+
+        let mut buf = Vec::with_capacity(PAGE_SIZE * 2);
+        let mut total_bytes_written = 0;
+        loop {
+            buf.clear();
+
+            let n = reader.read_buf(&mut buf).await?;
+            if n == 0 {
+                break;
+            }
+
+            writer.write_all(&buf).await?;
+
+            total_bytes_written += n;
+            reader.consume(n);
+        }
+
+        if total_bytes_written % PAGE_SIZE != 0 {
+            let zeros = vec![0u8; PAGE_SIZE - file_size % PAGE_SIZE];
+            writer.write_all(&zeros).await?;
+        }
+
+        writer.flush().await?;
+        Ok(())
+    }
 }
 
 fn u32_to_bytes(value: u32) -> [u8; 4] {
     value.to_be_bytes()
+}
+
+fn pad_vec_to_page(value: &mut Vec<u8>) {
+    value.resize(4096, 0);
 }

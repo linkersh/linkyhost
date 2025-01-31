@@ -5,6 +5,7 @@ use api::ApiServer;
 use chrono::Utc;
 use config::AppConfig;
 use storage::chunk::{Chunk, ChunkInfo};
+use tokio::{fs::File, io::BufReader};
 use tokio_util::sync::CancellationToken;
 
 mod api;
@@ -54,8 +55,23 @@ async fn main() -> Result<()> {
     // )
     // .await?;
 
-    let chunk = Chunk::read_from("./chunk.bin").await?;
-    dbg!(chunk);
+    let mut chunk = Chunk::write_new(
+        "./chunk.bin".into(),
+        ChunkInfo {
+            id: 1,
+            created_at: Utc::now(),
+        },
+    )
+    .await?;
+    let file = File::open("./Cargo.toml").await?;
+
+    chunk
+        .write_file(
+            file.metadata().await?.len() as usize,
+            1,
+            BufReader::new(file),
+        )
+        .await?;
 
     Ok(())
 }
