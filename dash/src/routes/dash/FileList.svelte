@@ -17,6 +17,7 @@
 	let limit = 100;
 	let skip = 0;
 	let isIntersecting = false;
+	let reachedBottom = false;
 	let observer: IntersectionObserver | undefined;
 
 	let pages = $state<Array<VaultFile[]>>([]);
@@ -33,11 +34,13 @@
 					const wasIntersecting = isIntersecting;
 
 					isIntersecting = entries[0].isIntersecting;
-					if (!wasIntersecting && isIntersecting) {
+					if (!wasIntersecting && isIntersecting && !reachedBottom) {
 						console.log('reached bottom of page, loading more');
 						const nextPage = await fetchFiles({ vaultId, limit, skip: skip + limit });
 						if (nextPage.length > 0) {
 							skip += limit;
+						} else {
+							reachedBottom = true;
 						}
 
 						pages.push(nextPage); // maybe wont work
