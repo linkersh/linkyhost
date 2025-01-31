@@ -1,12 +1,14 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::PathBuf,
+    str::FromStr,
+};
 
 use anyhow::Result;
-use api::ApiServer;
-use chrono::Utc;
-use config::AppConfig;
-use storage::chunk::{Chunk, ChunkInfo};
-use tokio::{fs::File, io::BufReader};
-use tokio_util::sync::CancellationToken;
+use storage::VaultStore;
+use tokio::{
+    fs::OpenOptions,
+    io::BufReader,
+};
 
 mod api;
 mod auth;
@@ -55,23 +57,17 @@ async fn main() -> Result<()> {
     // )
     // .await?;
 
-    let mut chunk = Chunk::write_new(
-        "./chunk.bin".into(),
-        ChunkInfo {
-            id: 1,
-            created_at: Utc::now(),
-        },
-    )
-    .await?;
-    let file = File::open("./Cargo.toml").await?;
+    let mut vault_store = VaultStore::new(1, PathBuf::from_str("../storage")?).await?;
 
-    chunk
-        .write_file(
-            file.metadata().await?.len() as usize,
-            1,
-            BufReader::new(file),
-        )
-        .await?;
+    // for _ in 0..100 {
+        let file = OpenOptions::new()
+            .read(true)
+            .open("../target-2.iso")
+            .await?;
+        let len = file.metadata().await?.len();
+        let reader = BufReader::new(file);
+        vault_store.write_file(len as usize, 1, reader).await?;
+    // }
 
     Ok(())
 }

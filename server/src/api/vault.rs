@@ -241,7 +241,7 @@ pub async fn group_upload(
             .upload_file_from_path(
                 vault_id,
                 db_file.id as i64,
-                &std::path::Path::new(&file.path),
+                std::path::Path::new(&file.path),
             )
             .await?;
     }
