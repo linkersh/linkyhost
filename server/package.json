@@ -1,0 +1,35 @@
+{
+  "name": "server",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun --watch run src/index.ts",
+    "mig:run": "bun mig:gen && bun x drizzle-kit push",
+    "mig:gen": "bun x drizzle-kit generate"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/luxon": "^3.6.2",
+    "@types/pg": "^8.11.13",
+    "dotenv": "^16.5.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.787.0",
+    "@elysiajs/cors": "^1.2.0",
+    "@sapphire/snowflake": "^3.5.5",
+    "arctic": "^3.6.0",
+    "drizzle-kit": "^0.31.0",
+    "drizzle-orm": "^0.42.0",
+    "elysia": "^1.2.25",
+    "elysia-oauth2": "^2.0.0",
+    "jose": "^6.0.10",
+    "luxon": "^3.6.1",
+    "pg": "^8.14.1",
+    "sharp": "^0.34.1",
+    "winston": "^3.17.0"
+  }
+}
