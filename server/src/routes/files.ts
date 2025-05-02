@@ -31,6 +31,7 @@ export function filesRouter() {
       "/:id/view",
       async ({ params: { id }, session }) => {
         const fileRepo = new FileRepository();
+
         const dbFile = await fileRepo.getFile({
           id: BigInt(id),
           userId: session.userId,
@@ -69,7 +70,7 @@ export function filesRouter() {
             const fileRepo = new FileRepository(tx);
             const randomDate = new Date(
               new Date().getFullYear() - Math.floor(Math.random() * 5), // Random year within the last 5 years
-              Math.floor(Math.random() * 12), // Random month
+              Math.floor(Math.random() * 10), // Random month
               Math.floor(Math.random() * 28) + 1 // Random day (1-28 to avoid invalid dates)
             );
 

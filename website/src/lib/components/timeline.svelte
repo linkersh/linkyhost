@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { getGallery } from '$lib/gallery';
 	import { onMount } from 'svelte';
 
 	interface YearData {
@@ -24,9 +23,11 @@
 			clearTimeout(timeout);
 		}
 
+		console.log("fetching bucket from timeline")
 		timeout = setTimeout(async () => {
-			const gallery = await getGallery();
-			gallery.setCurrentBucket({ count, date });
+			// const gallery = await getGallery();
+			// gallery.clearLoadedBuckets();
+			// await gallery.loadBucket(date);
 		}, 500);
 	}
 
@@ -84,57 +85,57 @@
 		isDragging = false;
 	}
 
-	onMount(async () => {
-		for (const bucket of (await getGallery()).buckets) {
-			const date = new Date(bucket.date);
-			const year = years.find((x) => x.year === date.getUTCFullYear());
-			if (!year) {
-				const h1 = document.createElement('h1');
-				h1.textContent = date.getUTCFullYear().toString();
-				h1.className = 'select-none text-white text-sm';
+	// onMount(async () => {
+	// 	for (const bucket of (await getGallery()).buckets) {
+	// 		const date = new Date(bucket.date);
+	// 		const year = years.find((x) => x.year === date.getUTCFullYear());
+	// 		if (!year) {
+	// 			const h1 = document.createElement('h1');
+	// 			h1.textContent = date.getUTCFullYear().toString();
+	// 			h1.className = 'select-none text-white text-sm';
 
-				container.appendChild(h1);
+	// 			container.appendChild(h1);
 
-				const div = document.createElement('div');
-				div.className = 'flex flex-col items-center gap-2';
+	// 			const div = document.createElement('div');
+	// 			div.className = 'flex flex-col items-center gap-2';
 
-				const monthDiv = document.createElement('div');
-				monthDiv.className = 'h-1 w-1 rounded-full bg-white';
+	// 			const monthDiv = document.createElement('div');
+	// 			monthDiv.className = 'h-1 w-1 rounded-full bg-white';
 
-				div.appendChild(monthDiv);
-				container.appendChild(div);
+	// 			div.appendChild(monthDiv);
+	// 			container.appendChild(div);
 
-				years = [
-					...years,
-					{
-						date: bucket.date,
-						year: date.getUTCFullYear(),
-						months: [
-							{
-								date: bucket.date,
-								element: monthDiv,
-								month: date.getUTCMonth() + 1,
-								count: bucket.count
-							}
-						],
-						headerElement: h1,
-						parentElement: div
-					}
-				];
-			} else {
-				const monthDiv = document.createElement('div');
-				monthDiv.className = 'h-1 w-1 rounded-full bg-white';
-				year.parentElement.appendChild(monthDiv);
+	// 			years = [
+	// 				...years,
+	// 				{
+	// 					date: bucket.date,
+	// 					year: date.getUTCFullYear(),
+	// 					months: [
+	// 						{
+	// 							date: bucket.date,
+	// 							element: monthDiv,
+	// 							month: date.getUTCMonth() + 1,
+	// 							count: bucket.count
+	// 						}
+	// 					],
+	// 					headerElement: h1,
+	// 					parentElement: div
+	// 				}
+	// 			];
+	// 		} else {
+	// 			const monthDiv = document.createElement('div');
+	// 			monthDiv.className = 'h-1 w-1 rounded-full bg-white';
+	// 			year.parentElement.appendChild(monthDiv);
 
-				year.months.push({
-					date: bucket.date,
-					month: date.getUTCMonth() + 1,
-					element: monthDiv,
-					count: bucket.count
-				});
-			}
-		}
-	});
+	// 			year.months.push({
+	// 				date: bucket.date,
+	// 				month: date.getUTCMonth() + 1,
+	// 				element: monthDiv,
+	// 				count: bucket.count
+	// 			});
+	// 		}
+	// 	}
+	// });
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->

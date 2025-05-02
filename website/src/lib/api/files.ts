@@ -19,7 +19,7 @@ export interface APIFile {
 }
 
 export interface TimeBucket {
-	date: string;
+	date: Date;
 	count: number;
 }
 
@@ -41,12 +41,16 @@ export async function uploadFile(file: File, albumId?: bigint) {
 	return await response.json();
 }
 
-export async function getBuckets(type: 'image' | 'video' | 'audio') {
+export async function getBuckets(type: 'image' | 'video' | 'audio'): Promise<TimeBucket[]> {
 	const response: TimeBucket[] = await kyc.get(`files/buckets?type=${type}`).json();
-	return response;
+	return response.map((x) => ({ count: x.count, date: new Date(x.date) }));
 }
 
-export async function getBucketFiles(type: 'image' | 'video' | 'audio', date: string) {
+export async function getBucketFiles(type: 'image' | 'video' | 'audio', date: string | Date) {
+	if (date instanceof Date) {
+		date = date.toISOString();
+	}
+
 	const response: APIFile[] = await kyc.get(`files/buckets/files?type=${type}&date=${date}`).json();
 	return response;
 }

@@ -101,7 +101,15 @@ export class FileRepository {
     // Parse the ISO date string to get the start and end of the month
     const dateObj = new Date(date);
     const startOfMonth = new Date(dateObj.getFullYear(), dateObj.getMonth(), 1);
-    const endOfMonth = new Date(dateObj.getFullYear(), dateObj.getMonth() + 1, 0, 23, 59, 59, 999);
+    const endOfMonth = new Date(
+      dateObj.getFullYear(),
+      dateObj.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999
+    );
 
     const bucketFiles = await this.exec
       .select()
@@ -124,5 +132,14 @@ export class FileRepository {
       where: and(eq(files.userId, userId), eq(files.id, id)),
     });
     return file;
+  }
+
+  public async getFiles(userId: bigint) {
+    const returnedFiles = await this.exec
+      .select()
+      .from(files)
+      .where(eq(files.userId, userId))
+      .orderBy(desc(files.createdAt));
+    return returnedFiles;
   }
 }

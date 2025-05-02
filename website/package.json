@@ -39,6 +39,8 @@
 	},
 	"dependencies": {
 		"@lucide/svelte": "^0.488.0",
+		"@tanstack/svelte-query": "^5.74.4",
+		"@tanstack/svelte-virtual": "^3.13.6",
 		"clsx": "^2.1.1",
 		"ky": "^1.8.1",
 		"mode-watcher": "^1.0.0",

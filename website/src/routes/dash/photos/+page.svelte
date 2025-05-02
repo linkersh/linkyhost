@@ -1,44 +1,27 @@
 <script lang="ts">
-	import { getBucketFiles, getBuckets, type APIFile, type TimeBucket } from '$lib/api/files';
-	import { onMount, tick } from 'svelte';
-	import PageTitle from '$lib/components/page-title.svelte';
-	import Timeline from '$lib/components/timeline.svelte';
-	import { getGallery, type BucketWithFiles } from '$lib/gallery';
-	import MasonryLayout from './MasonryLayout.svelte';
-	import { writable, type Writable } from 'svelte/store';
+	import { onMount } from 'svelte';
+	import ImageGroup from './ImageGroup.svelte';
+	import { getBuckets, type TimeBucket } from '$lib/api/files';
+	import { globalScrollTop } from '$lib';
 
-	let files: BucketWithFiles[] = $state([]);
-	let scrollBucketStore: Writable<string | undefined> = writable();
-
-	async function fetchFiles(bucket?: TimeBucket) {
-		const gallery = await getGallery();
-		files = await gallery.getLoadedBuckets();
-
-		await tick();
-
-		if (bucket) {
-			scrollBucketStore.set(bucket.date);
-		}
-	}
+	let buckets: TimeBucket[] = $state([]);
+	let scrollContainer: HTMLDivElement;
 
 	onMount(async () => {
-		await fetchFiles();
+		buckets = await getBuckets('image');
 
-		const gallery = await getGallery();
-		gallery.focuson = async (currentBucket) => {
-			await fetchFiles(currentBucket);
-		};
+		// setTimeout(() => {
+		// 	scrollIntoBucket.set(buckets[5].date.toISOString());
+		// }, 5000);
 	});
+
+	function onscroll(e: UIEvent & { currentTarget: EventTarget & HTMLDivElement }) {
+		globalScrollTop.set(e.currentTarget.scrollTop);
+	}
 </script>
 
-<PageTitle>Photos</PageTitle>
-
-<div class="flex flex-row justify-between gap-2">
-	<div class="h-[calc(100vh-4rem)] w-screen overflow-y-auto">
-		<MasonryLayout buckets={files} {scrollBucketStore}></MasonryLayout>
-	</div>
-
-	<!-- {#if buckets.length > 0} -->
-	<Timeline></Timeline>
-	<!-- {/if} -->
+<div {onscroll} bind:this={scrollContainer} class="h-full w-full overflow-y-auto">
+	{#each buckets as group, i}
+		<ImageGroup date={group.date} bucketKey={group.date.toISOString()}></ImageGroup>
+	{/each}
 </div>
